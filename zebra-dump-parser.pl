@@ -73,6 +73,8 @@ use constant {
 	BGP_ATTR_MP_REACH_NLRI		=> 14,
 	BGP_ATTR_MP_UNREACH_NLRI	=> 15,
 	BGP_ATTR_EXT_COMMUNITIES	=> 16,
+	BGP_ATTR_AS4_PATH		=> 17,
+	BGP_ATTR_AS4_AGGREGATOR		=> 18,
 };
 
 my @BGP_ORIGIN = qw(IGP EGP Incomplete);
@@ -352,6 +354,9 @@ sub parse_attributes {
 		if ($type == BGP_ATTR_ORIGIN) {
 			$attr[BGP_ATTR_ORIGIN] = unpack('C', $attrib);
 		} elsif ($type == BGP_ATTR_AS_PATH) {
+			if($attr[BGP_ATTR_AS4_PATH]) {
+				next; # ignore AS_PATH if AS4_PATH exists
+			}
 			$attr[BGP_ATTR_AS_PATH] = [ ];
 			$as_size ||= 2;
 			while (length $attrib > 0) {
@@ -370,6 +375,9 @@ sub parse_attributes {
 		} elsif ($type == BGP_ATTR_ATOMIC_AGGREGATE) {
 			$attr[BGP_ATTR_ATOMIC_AGGREGATE] = 1;
 		} elsif ($type == BGP_ATTR_AGGREGATOR) {
+			if($attr[BGP_ATTR_AS4_AGGREGATOR]) {
+				next; # ignore BGP_ATTR_AGGREGATOR if BGP_ATTR_AS4_AGGREGATOR exists
+			}
 			$attr[BGP_ATTR_AGGREGATOR] = [ unpack('a2 a4', $attrib) ];# N, IPv4
 		} elsif ($type == BGP_ATTR_COMMUNITIES) {
 			$attr[BGP_ATTR_COMMUNITIES] = [ ];
@@ -421,6 +429,20 @@ sub parse_attributes {
 			$attr[BGP_ATTR_ORIGINATOR_ID] = $attrib;		# IPv4
 		} elsif ($type == BGP_ATTR_CLUSTER_LIST) {
 			$attr[BGP_ATTR_CLUSTER_LIST] = $attrib;			# IPv4
+		} elsif ($type == BGP_ATTR_AS4_PATH) {
+			$attr[BGP_ATTR_AS_PATH] = [ ];
+			$attr[BGP_ATTR_AS4_PATH] = 1;
+			$as_size = 4;
+			while (length $attrib > 0) {
+				my ($seg_type, $seg_length);
+				($seg_type, $seg_length, $attrib) = unpack('C C a*', $attrib);
+				my $seg_value = substr($attrib, 0, $seg_length * $as_size, '');
+				push(@{$attr[BGP_ATTR_AS_PATH]},
+					[ $seg_type, [ unpack("(a$as_size)*", $seg_value) ] ]);
+			}
+		} elsif ($type == BGP_ATTR_AS4_AGGREGATOR) {
+			$attr[BGP_ATTR_AS4_AGGREGATOR] = 1;
+			$attr[BGP_ATTR_AGGREGATOR] = [ unpack('a4 a4', $attrib) ];# N, IPv4
 		} else {
 			warn "Unknown BGP attribute $type (flags: $flags)\n";
 		}
